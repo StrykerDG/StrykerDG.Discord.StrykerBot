@@ -1,7 +1,10 @@
 ﻿using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StrykerDG.Discord.StrykerBot.Config;
+using StrykerDG.Discord.StrykerBot.Services;
 using System;
 using System.Threading.Tasks;
 
@@ -9,20 +12,26 @@ namespace StrykerDG.Discord.StrykerBot
 {
     public class Program
     {
+        // Configuration Objects
+        private IConfiguration _configuration;
+        private IServiceProvider _services;
+
+        // Discord.Net Objects
         private DiscordSocketClient _client;
         private CommandService _commandService;
-        private CommandHandler _handler;
-        //private IServiceProvider _services;
 
-        // Enter into a an async context, allowing us to
-        // connect to Discord without worrying about 
-        // setting up an async implementation
+        // Custom Handlers and Settings
+        private CommandHandler _commandHandler;
+        private UserHandler _userHandler;
+        private LoggingService _logService;
+        private BotSettings _botSettings;
+
         public static void Main(string[] args) =>
             new Program().MainAsync().GetAwaiter().GetResult();
 
-        // Our Main() / Entry point method 
         public async Task MainAsync()
         {
+            // Create the Discord objects
             _client = new DiscordSocketClient();
             _commandService = new CommandService(new CommandServiceConfig
             {
@@ -30,15 +39,24 @@ namespace StrykerDG.Discord.StrykerBot
                 CaseSensitiveCommands = false
             });
 
-            _client.Log += Log;
-            _commandService.Log += Log;
+            _logService = new LoggingService(_client, _commandService);
 
-            _handler = new CommandHandler(_client, _commandService);
-            await _handler.InstallCommandAsync();
+            // Configure Dependency Injection
+            var serviceCollection = new ServiceCollection();
+            ConfigureServices(serviceCollection);
+            _services = serviceCollection.BuildServiceProvider();
 
+            // Initialize our handlers
+            _commandHandler = new CommandHandler(_client, _commandService, _services);
+            _userHandler = new UserHandler(_client, _botSettings);
+
+            await _commandHandler.InstallCommandAsync();
+            await _userHandler.InstallCommandAsync();
+
+            // Connect to Discord
             await _client.LoginAsync(
                 TokenType.Bot,
-                "<TOKEN GOES HERE>"
+                _botSettings.DiscordToken
             );
 
             await _client.StartAsync();
@@ -47,23 +65,18 @@ namespace StrykerDG.Discord.StrykerBot
             await Task.Delay(-1);
         }
 
-        /*
-        private static IServiceProvider ConfigureServices()
+        private void ConfigureServices(IServiceCollection services)
         {
-            var map = new ServiceCollection()
-                // Repeat for all service classes and dependencies
-                .AddSingleton(new SomeServiceClass);
+            _configuration = new ConfigurationBuilder()
+                .AddJsonFile("appsettings.json", optional: false)
+                .Build();
 
-            return map.BuildServiceProvider();
-        }
-        */
+            _botSettings = new BotSettings();
+            _configuration.GetSection("BotSettings").Bind(_botSettings);
 
-        // Handle Discord.Net's Log events
-        private Task Log(LogMessage message)
-        {
-            // TODO: Actually do something with them
-            Console.WriteLine(message.ToString());
-            return Task.CompletedTask;
+            // Allow DI for Settings
+            services.Configure<BotSettings>(_configuration.GetSection("BotSettings"));
+            services.AddSingleton(_logService);
         }
     }
 }

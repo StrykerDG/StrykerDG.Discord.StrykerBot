@@ -1,7 +1,7 @@
 ﻿using Discord.Commands;
 using Discord.WebSocket;
 using StrykerDG.Discord.StrykerBot.Modules;
-//using System.Reflection;
+using System;
 using System.Threading.Tasks;
 
 namespace StrykerDG.Discord.StrykerBot
@@ -10,25 +10,20 @@ namespace StrykerDG.Discord.StrykerBot
     {
         private readonly DiscordSocketClient _client;
         private readonly CommandService _commandService;
+        private readonly IServiceProvider _services;
 
-        public CommandHandler(DiscordSocketClient client, CommandService service)
+        public CommandHandler(DiscordSocketClient client, CommandService commandService, IServiceProvider services = null)
         {
             _client = client;
-            _commandService = service;
+            _commandService = commandService;
+            _services = services;
         }
 
         public async Task InstallCommandAsync()
         {
-            // Hook the MessageReceived event into our handler
             _client.MessageReceived += HandleCommandAsync;
-
-            // Discover all command modules and load them.
-            // Services should be null if not using Dependency Injection
-            //await _commandService.AddModulesAsync(
-            //    assembly: Assembly.GetEntryAssembly(),
-            //    services: null
-            //);
-            await _commandService.AddModuleAsync<InfoModule>(null);
+            await _commandService.AddModuleAsync<InfoModule>(_services);
+            await _commandService.AddModuleAsync<AdminModule>(_services);
         }
 
         private async Task HandleCommandAsync(SocketMessage messageParam)
@@ -57,7 +52,7 @@ namespace StrykerDG.Discord.StrykerBot
             var result = await _commandService.ExecuteAsync(
                 context: context,
                 argPos: argPos,
-                services: null
+                services: _services
             );
 
             // Inform the user if the command fails
